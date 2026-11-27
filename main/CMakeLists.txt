@@ -46,6 +46,7 @@ idf_component_register(
 		json
         espressif__tinyusb
         usb
+        esp_driver_i2c
 )
 
 # TinyUSB reads its configuration from a tusb_config.h on its own include

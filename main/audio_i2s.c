@@ -20,6 +20,8 @@
 #include "usb_audio.h"
 #include "voice_playout.h"
 #include "wled_sync.h"
+#include "pinmap.h"
+#include "driver/i2c_master.h"
 
 static const char *TAG = "AUDIO_I2S";
 
@@ -649,6 +651,62 @@ void audio_i2s_set_user_volume(uint8_t percent, bool muted)
     portEXIT_CRITICAL(&s_dsp_lock);
 }
 
+static void pcm5122_try_init_i2c(void)
+{
+    /* Sonocotta HiFi-ESP32S3 Plus: SDA=42, SCL=41 (Rev H1+); swapped on Rev H */
+    i2c_master_bus_config_t bus_cfg = {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = I2C_NUM_0,
+        .scl_io_num = GPIO_NUM_41,
+        .sda_io_num = GPIO_NUM_42,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
+    };
+
+    i2c_master_bus_handle_t bus = NULL;
+    if (i2c_new_master_bus(&bus_cfg, &bus) != ESP_OK) {
+        ESP_LOGW(TAG, "PCM5122 I2C bus init failed");
+        return;
+    }
+
+    /* Address is 0x4D on Rev H1+, 0x4C on Rev H */
+    uint8_t addr = 0x4D;
+    if (i2c_master_probe(bus, addr, 50) != ESP_OK) {
+        addr = 0x4C;
+        if (i2c_master_probe(bus, addr, 50) != ESP_OK) {
+            ESP_LOGI(TAG, "No PCM5122 found on I2C (0x4D/0x4C)");
+            i2c_del_master_bus(bus);
+            return;
+        }
+    }
+
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = addr,
+        .scl_speed_hz = 100000,
+    };
+    i2c_master_dev_handle_t dev = NULL;
+    if (i2c_master_bus_add_device(bus, &dev_cfg, &dev) == ESP_OK) {
+        /* Minimal Page 0 sequence: exit standby, use BCLK for PLL, 16-bit I2S, 0 dB vol, unmute */
+        const uint8_t seq[][2] = {
+            { 0x00, 0x00 }, /* Select Page 0 */
+            { 0x02, 0x00 }, /* Normal operation (exit standby/powerdown) */
+            { 0x0D, 0x10 }, /* PLL reference = BCLK */
+            { 0x25, 0x08 }, /* Ignore missing external SCK/MCLK */
+            { 0x28, 0x00 }, /* Standard I2S format, 16-bit */
+            { 0x3D, 0x30 }, /* Left digital volume = 0.0 dB */
+            { 0x3E, 0x30 }, /* Right digital volume = 0.0 dB */
+            { 0x03, 0x00 }, /* Unmute Left & Right DACs */
+        };
+        for (size_t i = 0; i < sizeof(seq) / sizeof(seq[0]); ++i) {
+            (void)i2c_master_transmit(dev, seq[i], 2, 50);
+        }
+        ESP_LOGI(TAG, "PCM5122 initialized over I2C at 0x%02X", addr);
+        i2c_master_bus_rm_device(dev);
+    }
+    i2c_del_master_bus(bus);
+}
+
 esp_err_t audio_i2s_start(void)
 {
     if (s_started) {
@@ -800,6 +858,20 @@ esp_err_t audio_i2s_start(void)
              (double)AUDIO_CROSSOVER_FREQUENCY_HZ,
              SUBWOOFER_OUTPUT_CHANNEL == PCM_CHANNEL_LEFT ? "left" : "right",
              WIDEBAND_OUTPUT_CHANNEL == PCM_CHANNEL_LEFT ? "left" : "right");
+
+    if (pins.dac_enable > 0U && pins.dac_enable <= PINMAP_GPIO_MAX) { 
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << pins.dac_enable),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&io_conf);
+        gpio_set_level((gpio_num_t)pins.dac_enable, 1);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        pcm5122_try_init_i2c();
+    }
 
     return ESP_OK;
 

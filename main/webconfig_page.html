@@ -158,6 +158,7 @@
   <option value="">&mdash;</option>
   <option value="standard">Standard: BCLK 12, LRCLK 14, DIN 11, DOUT 13</option>
   <option value="alt">Alternative: BCLK 17, LRCLK 8, DIN 5, DOUT 18</option>
+  <option value="hifiesp32plus">Hifi-ESP32-Plus: BCLK 14, LRCLK 15, DIN 11, DOUT 15</option>
 </select>
 <div class="row">
   <div><label for="pin_i2s_bclk">I2S BCLK</label><select id="pin_i2s_bclk"></select></div>
@@ -175,6 +176,7 @@
 <div class="row">
   <div id="status_led_row"><label for="pin_status_led">Status LED (WS2812 data)</label><select id="pin_status_led"></select></div>
   <div id="power_button_row"><label for="pin_power_button">Power button (to GND)</label><select id="pin_power_button"></select></div>
+  <div id="dac_enable_row"><label for="pin_dac_enable">DAC enable GPIO</label><select id="pin_dac_enable"></select></div>
 </div>
 <div class="note" id="power_button_note">Power button: hold 2 s = off, hold 1 s = on</div>
 <div id="pots_section">
@@ -262,6 +264,7 @@ const DE = {
   'I2S DIN (from ADC)': 'I2S DIN (vom ADC)',
   'I2S DOUT (to DAC)': 'I2S DOUT (zum DAC)',
   'Power button (to GND)': 'Ein/Aus-Taster (gegen GND)',
+  'DAC enable GPIO': 'DAC enable GPIO',
   'Power button: hold 2 s = off, hold 1 s = on': 'Taster: 2 s halten = aus, 1 s halten = an',
   'Status LED (WS2812 data)': 'Status-LED (WS2812-Daten)',
   'Volume knob': 'Lautstärke-Poti',
@@ -564,6 +567,7 @@ async function loadConfig() {
     pin_i2s_dout: cfg.pins.i2s_dout,
     pin_status_led: cfg.pins.status_led,
     pin_power_button: cfg.pins.power_button || 0,
+    pin_dac_enable: cfg.pins.dac_enable || 0,
     pot_volume_gpio: cfg.pot_volume_gpio,
     pot_delay_gpio: cfg.pot_delay_gpio,
   });
@@ -581,6 +585,7 @@ const PIN_FIELDS = [
   { id: 'pin_i2s_dout' },
   { id: 'pin_status_led', optional: true },
   { id: 'pin_power_button', optional: true, rtc: true },
+  { id: 'pin_dac_enable', optional: true },
   { id: 'pot_volume_gpio', optional: true, adc: true },
   { id: 'pot_delay_gpio', optional: true, adc: true },
 ];
@@ -588,6 +593,7 @@ const PIN_FIELDS = [
 const PIN_PRESETS = {
   standard: { pin_i2s_bclk: 12, pin_i2s_lrclk: 14, pin_i2s_din: 11, pin_i2s_dout: 13 },
   alt: { pin_i2s_bclk: 17, pin_i2s_lrclk: 8, pin_i2s_din: 5, pin_i2s_dout: 18 },
+  hifiesp32plus: { pin_i2s_bclk: 14, pin_i2s_lrclk: 15, pin_i2s_din: 11, pin_i2s_dout: 16, pin_dac_enable: 4 },
 };
 
 function usablePins(field) {
@@ -768,8 +774,10 @@ $('pin_preset').addEventListener('change', () => {
   $('pin_i2s_slave').value = '0';
   const values = Object.assign(currentPins(), preset);
   const presetPins = Object.values(preset);
-  for (const id of ['pin_status_led', 'pin_power_button', 'pot_volume_gpio', 'pot_delay_gpio']) {
-    if (presetPins.includes(values[id])) values[id] = 0;
+  for (const id of ['pin_status_led', 'pin_power_button', 'pin_dac_enable', 'pot_volume_gpio', 'pot_delay_gpio']) {
+    if (!(id in preset)) {
+      if (presetPins.includes(values[id])) values[id] = 0;
+    }
   }
   fillPinSelects(values);
 });
@@ -810,6 +818,7 @@ $('save').addEventListener('click', async () => {
       status_led: Number($('pin_status_led').value),
       i2s_slave: Number($('pin_i2s_slave').value),
       power_button: Number($('pin_power_button').value),
+      dac_enable: Number($('pin_dac_enable').value),
     },
     pot_volume_gpio: Number($('pot_volume_gpio').value),
     pot_delay_gpio: Number($('pot_delay_gpio').value),

@@ -188,6 +188,7 @@ typedef struct {
     uint8_t trial_boots;
     uint8_t i2s_slave;
     uint8_t power_button;
+    uint8_t dac_enable;
 } device_pins_t;
 
 #define DEVICE_PINS_TRIAL_BOOTS_MAX 3U

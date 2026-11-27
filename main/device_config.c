@@ -104,7 +104,8 @@ static bool pin_taken(const device_pins_t *pins, uint8_t gpio)
     }
     return gpio == pins->i2s_bclk || gpio == pins->i2s_lrclk ||
            gpio == pins->i2s_din || gpio == pins->i2s_dout ||
-           gpio == pins->status_led || gpio == pins->power_button;
+           gpio == pins->status_led || gpio == pins->power_button ||
+           gpio == pins->dac_enable;
 }
 
 static bool pins_valid(const device_pins_t *pins)
@@ -118,11 +119,11 @@ static bool pins_valid(const device_pins_t *pins)
     }
     const uint8_t used[] = {
         pins->i2s_bclk, pins->i2s_lrclk, pins->i2s_din, pins->i2s_dout,
-        pins->status_led, pins->power_button,
+        pins->status_led, pins->power_button, pins->dac_enable,
     };
     const size_t count = sizeof(used) / sizeof(used[0]);
-    /* The LED and the button, the last two entries, may be left unassigned. */
-    const size_t first_optional = count - 2U;
+    /* The LED, the button and the dac enable, the last three entries, may be left unassigned. */
+    const size_t first_optional = count - 3U;
     for (size_t i = 0; i < count; ++i) {
         if (used[i] == 0U && i >= first_optional) {
             continue;
@@ -147,7 +148,7 @@ static bool pins_differ(const device_pins_t *a, const device_pins_t *b)
     return a->i2s_bclk != b->i2s_bclk || a->i2s_lrclk != b->i2s_lrclk ||
            a->i2s_din != b->i2s_din || a->i2s_dout != b->i2s_dout ||
            a->status_led != b->status_led || a->i2s_slave != b->i2s_slave ||
-           a->power_button != b->power_button;
+           a->power_button != b->power_button || a->dac_enable != b->dac_enable;
 }
 
 static esp_err_t write_pins_blob(const device_pins_t *pins)
